@@ -112,18 +112,19 @@ printBytesHex (SMCVal_t val)
 void
 printVal (SMCVal_t val)
 {
-  printf("  %-4s  [%-4s]  ", val.key, val.dataType);
   if (val.dataSize > 0) {
+    printf("%-4s  %-4s", val.key, val.dataType);
     if ((strcmp(val.dataType, DATATYPE_UINT8) == 0) ||
         (strcmp(val.dataType, DATATYPE_UINT16) == 0) ||
         (strcmp(val.dataType, DATATYPE_UINT32) == 0)) {
       printUInt(val);
     } else if (strcmp(val.dataType, DATATYPE_FPE2) == 0) {
       printFPE2(val);
+    } else {
+      float c_temp = ((val.bytes[0] * 256 + val.bytes[1]) >> 2)/64;
+      printf("\t%1.0f", c_temp);
     }
-    printBytesHex(val);
-  } else {
-    printf("no data\n");
+    printf("\n");
   }
 }
 
@@ -421,19 +422,22 @@ kern_return_t SMCPrintFans(void)
   return kIOReturnSuccess;
 }
 
-void usage(char* prog)
+void
+version (char* prog)
 {
-  printf("Apple System Management Control (SMC) tool %s\n", VERSION);
+  printf("%s\n", VERSION);
+}
+
+void
+usage (char* prog)
+{
   printf("Usage:\n");
   printf("%s [options]\n", prog);
-  printf("    -f         : fan info decoded\n");
-  printf("    -h         : help\n");
-  printf("    -k <key>   : key to manipulate\n");
-  printf("    -l         : list all keys and values\n");
-  printf("    -r         : read the value of a key\n");
-  printf("    -w <value> : write the specified value to a key\n");
-  printf("    -v         : version\n");
-  printf("\n");
+  printf("    fans       : fan info decoded\n");
+  printf("    help       : help\n");
+  printf("    list       : list all keys and values\n");
+  printf("    read       : read the value of a key\n");
+  printf("    version    : version\n");
 }
 
 kern_return_t SMCWriteSimple(UInt32Char_t key,char *wvalue,io_connect_t conn)
@@ -463,54 +467,43 @@ int main(int argc, char *argv[])
   extern char   *optarg;
 
   kern_return_t result;
-  int           op = OP_NONE;
+  int           op = OP_USAGE;
   UInt32Char_t  key = "\0";
   SMCVal_t      val;
 
-  while ((c = getopt(argc, argv, "fhk:lrw:v")) != -1) {
-    switch(c) {
-    case 'f':
+  if (argc > 1) {
+    if (strcmp("fans",argv[1]) == 0) {
       op = OP_READ_FAN;
-      break;
-    case 'k':
-      strncpy(key, optarg, sizeof(key));   //fix for buffer overflow
-      break;
-    case 'l':
+    } else if (strcmp("list",argv[1]) == 0) {
       op = OP_LIST;
-      break;
-    case 'r':
+    } else if (strcmp("read",argv[1]) == 0) {
       op = OP_READ;
-      break;
-    case 'v':
-      printf("%s\n", VERSION);
-      return 0;
-      break;
-    case 'w':
-      op = OP_WRITE;
-      {
-        int i;
-        char c[3];
-        for (i = 0; i < strlen(optarg); i++) {
-          sprintf(c, "%c%c", optarg[i * 2], optarg[(i * 2) + 1]);
-          val.bytes[i] = (int) strtol(c, NULL, 16);
+      if (argc > 2) {
+        size_t copylen = strlen(argv[2]);
+        if (copylen > sizeof(UInt32Char_t)) {
+          copylen = sizeof(UInt32Char_t);
         }
-        val.dataSize = i / 2;
-        if ((val.dataSize * 2) != strlen(optarg)) {
-          printf("Error: value is not valid\n");
-          return 1;
-        }
+        strncpy(key, argv[2], copylen);
+      } else {
+        op = OP_USAGE;
       }
-      break;
-    case 'h':
-    case '?':
-      op = OP_NONE;
-      break;
+    } else if (strcmp("version",argv[1]) == 0) {
+      op = OP_VERSION;
+    } else {
+      op = OP_USAGE;
     }
   }
 
-  if (op == OP_NONE) {
+  switch (op) {
+  case OP_VERSION:
+    version(argv[0]);
+    return EXIT_SUCCESS;
+  case OP_USAGE:
     usage(argv[0]);
-    return 1;
+    return EXIT_FAILURE;
+    break;
+  default:
+    break;
   }
 
   SMCOpen(&conn);
